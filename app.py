@@ -1,15 +1,18 @@
 # social_network.py
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-import sqlite3
-from dataclasses import dataclass
 from typing import List, Optional
+
+from neo4j import GraphDatabase
+
+URI = "neo4j+s://b2b408c4.databases.neo4j.io"
+AUTH = ("neo4j", "X_FrO7r7NcvUvauFRGW6i55zDo3xAoZsqjpD-rOr0Mk")
 
 # ======================
 # Database Access Layer
 # ======================
 class Database:
-    def __init__(self, db_name='social_network.db'):
-        self.db_name = db_name
+    def __init__(self):
+        self.driver = GraphDatabase.driver(URI, auth=AUTH)
         self._init_db()
     
     def _init_db(self):
@@ -22,9 +25,7 @@ class Database:
             database_="neo4j",
         )
        
-    def _get_connection(self):
-        return sqlite3.connect(self.db_name)
-    
+       
     # User operations
     def create_user(self, username: str, name: str) -> int:
         with self._get_connection() as conn:
