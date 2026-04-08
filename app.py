@@ -63,28 +63,42 @@ class Database:
         
     # Post operations
     def create_post(self, user_id: int, content: str) -> int:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO posts (user_id, content) VALUES (?, ?)', (user_id, content))
-            return cursor.lastrowid
+        records, _, _ = self.driver.execute_query(
+        """
+        MERGE (c:Counter {name: 'post'})
+        ON CREATE SET c.value = 1
+        ON MATCH SET c.value = c.value + 1
+        WITH c.value AS new_id
+        MATCH (u:User {id: $user_id})
+        CREATE (p:Post {id: new_id, content: $content, timestamp: datetime()})
+        CREATE (u)-[:POSTED]->(p)
+        RETURN p.id AS id
+        """,
+        user_id=user_id,
+        content=content,
+        database_="neo4j",
+     )
+        return records[0]["id"]
     
     def get_posts_by_user(self, user_id: int) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT p.id, p.content, p.timestamp, u.username, u.name 
-                FROM posts p JOIN users u ON p.user_id = u.id 
-                WHERE p.user_id = ?
-                ORDER BY p.timestamp DESC
-            ''', (user_id,))
-            return [{
-                'id': row[0],
-                'content': row[1],
-                'timestamp': row[2],
-                'username': row[3],
-                'name': row[4]
-            } for row in cursor.fetchall()]
-    
+        records, _, _ = self.driver.execute_query(
+        """
+        MATCH (u:User {id: $user_id})-[:POSTED]->(p:Post)
+        RETURN p.id AS id, p.content AS content,
+               toString(p.timestamp) AS timestamp,
+               u.username AS username, u.name AS name
+        ORDER BY p.timestamp DESC
+        """,
+        user_id=user_id,
+        database_="neo4j",
+        )
+        return [dict(r) for r in records]
+
+
+
+
+
+
     def get_feed(self, user_id: int) -> List[dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
