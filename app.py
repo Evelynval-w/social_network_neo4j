@@ -97,8 +97,6 @@ class Database:
 
 
 
-
-
     def get_feed(self, user_id: int) -> List[dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -119,43 +117,53 @@ class Database:
             } for row in cursor.fetchall()]
     
     # Follow operations
+    
     def follow_user(self, follower_id: int, followee_id: int) -> bool:
-        with self._get_connection() as conn:
-            try:
-                conn.execute('INSERT INTO followers (follower_id, followee_id) VALUES (?, ?)', 
-                           (follower_id, followee_id))
-                return True
-            except sqlite3.IntegrityError:
-                return False
-    
-    def get_followers(self, user_id: int) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT u.id, u.username, u.name 
-                FROM followers f 
-                JOIN users u ON f.follower_id = u.id
-                WHERE f.followee_id = ?
-            ''', (user_id,))
-            return [{'id': row[0], 'username': row[1], 'name': row[2]} for row in cursor.fetchall()]
-    
-    def get_following(self, user_id: int) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT u.id, u.username, u.name 
-                FROM followers f 
-                JOIN users u ON f.followee_id = u.id
-                WHERE f.follower_id = ?
-            ''', (user_id,))
-            return [{'id': row[0], 'username': row[1], 'name': row[2]} for row in cursor.fetchall()]
+        self.driver.execute_query(
+        """
+        MATCH (a:User {id: $follower_id}), (b:User {id: $followee_id})
+        MERGE (a)-[:FOLLOWS]->(b)
+        """,
+        follower_id=follower_id,
+        followee_id=followee_id,
+        database_="neo4j",
+    )
+        return True
 
     def unfollow_user(self, follower_id: int, followee_id: int) -> bool:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM followers WHERE follower_id = ? AND followee_id = ?', 
-                        (follower_id, followee_id))
-            return cursor.rowcount > 0
+        _, summary, _ = self.driver.execute_query(
+        """
+        MATCH (a:User {id: $follower_id})-[r:FOLLOWS]->(b:User {id: $followee_id})
+        DELETE r
+        """,
+        follower_id=follower_id,
+        followee_id=followee_id,
+        database_="neo4j",
+        )
+        return summary.counters.relationships_deleted > 0
+
+    def get_followers(self, user_id: int) -> List[dict]:
+        records, _, _ = self.driver.execute_query(
+        """
+        MATCH (follower:User)-[:FOLLOWS]->(u:User {id: $user_id})
+        RETURN follower.id AS id, follower.username AS username, follower.name AS name
+        """,
+        user_id=user_id,
+        database_="neo4j",
+        )
+        return [dict(r) for r in records]
+
+    def get_following(self, user_id: int) -> List[dict]:
+        records, _, _ = self.driver.execute_query(
+        """
+        MATCH (u:User {id: $user_id})-[:FOLLOWS]->(followee:User)
+        RETURN followee.id AS id, followee.username AS username, followee.name AS name
+        """,
+        user_id=user_id,
+        database_="neo4j",
+        )
+        return [dict(r) for r in records]
+
 
 # ======================
 # Web Application
