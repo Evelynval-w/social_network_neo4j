@@ -93,28 +93,26 @@ class Database:
         database_="neo4j",
         )
         return [dict(r) for r in records]
-
-
-
-
+    
     def get_feed(self, user_id: int) -> List[dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT p.id, p.content, p.timestamp, u.username, u.name 
-                FROM posts p 
-                JOIN users u ON p.user_id = u.id
-                JOIN followers f ON p.user_id = f.followee_id
-                WHERE f.follower_id = ?
-                ORDER BY p.timestamp DESC
-            ''', (user_id,))
-            return [{
-                'id': row[0],
-                'content': row[1],
-                'timestamp': row[2],
-                'username': row[3],
-                'name': row[4]
-            } for row in cursor.fetchall()]
+        records, _, _ = self.driver.execute_query(
+        """
+        MATCH (me:User {id: $user_id})-[:FOLLOWS]->(followed:User)-[:POSTED]->(p:Post)
+        RETURN p.id AS id, p.content AS content,
+               toString(p.timestamp) AS timestamp,
+               followed.username AS username, followed.name AS name
+        ORDER BY p.timestamp DESC
+        """,
+        user_id=user_id,
+        database_="neo4j",
+    )
+        return [dict(r) for r in records]
+    
+    
+
+
+
+
     
     # Follow operations
     
